@@ -10,47 +10,73 @@ def check_correctness(parser, args):
         print("= Error: No cmd given")
         print("---")
         parser.print_help()
-        sys.exit(1)
+        return False
 
-    elif args.cmd == 'danetls' and \
-        (args.domain is None or \
-         args.fqdn is None or \
-         args.port is None or \
-         args.protocol is None or \
-         args.privkey is None or \
-         args.login is None):
-        print("= Error: cmd 'danetls' requires --fqdn, --port, --protocol, --private-key and --login")
+    # danetls specific
+    elif args.cmd == 'danetlsa' and args.fqdn is None:
+        print("= Error: cmd 'danetls' requires --fqdn")
         print("---")
         parser.print_help()
-        sys.exit(1)
+        return False
 
-    elif args.cmd == 'add' and \
-        (args.domain is None or \
-         args.name is None or \
-         args.expire is None or \
-         args.rr_type is None or \
-         args.r_content is None or \
-         args.privkey is None or \
-         args.login is None):
-        print("= Error: cmd 'add' requires --name, --expire, --type, --content, --private-key and --login")
+    elif args.cmd == 'danetlsa' and args.port is None:
+        print("= Error: cmd 'danetls' requires --port")
         print("---")
         parser.print_help()
-        sys.exit(1)
+        return False
 
-    elif args.cmd == 'remove' and \
-        (args.domain is None or \
-         args.name is None or \
-         args.expire is None or \
-         args.rr_type is None or \
-         args.r_content is None or \
-         args.privkey is None or \
-         args.login is None):
-        print("= Error: cmd 'remove' requires --name, --expire, --type, --content, --private-key and --login")
+    elif args.cmd == 'danetlsa' and args.protocol is None:
+        print("= Error: cmd 'danetls' requires --protocol")
         print("---")
         parser.print_help()
-        sys.exit(1)
+        return False
 
-    return args
+
+    # other
+    elif (args.cmd == 'add' or args.cmd == 'remove' or args.cmd == 'danetlsa') and args.domain is None:
+        print("= Error: cmd '{}' requires --domain", args.cmd)
+        print("---")
+        parser.print_help()
+        return False
+
+    elif (args.cmd == 'add' or args.cmd == 'remove' or args.cmd == 'danetlsa') and args.login is None:
+        print("= Error: cmd '{}' requires --login", args.cmd)
+        print("---")
+        parser.print_help()
+        return False
+
+    elif (args.cmd == 'add' or args.cmd == 'remove' or args.cmd == 'danetlsa') and args.privkey is None:
+        print("= Error: cmd '{}' requires --private-key", args.cmd)
+        print("---")
+        parser.print_help()
+        return False
+
+    # add and remove
+    elif (args.cmd == 'add' or args.cmd == 'remove') and args.name is None:
+        print("= Error: cmd '{}' requires --name", args.cmd)
+        print("---")
+        parser.print_help()
+        return False
+
+    elif (args.cmd == 'add' or args.cmd == 'remove') and args.expire is None:
+        print("= Error: cmd '{}' requires --expire", args.cmd)
+        print("---")
+        parser.print_help()
+        return False
+
+    elif (args.cmd == 'add' or args.cmd == 'remove') and args.rr_type is None:
+        print("= Error: cmd '{}' requires --type", args.cmd)
+        print("---")
+        parser.print_help()
+        return False
+
+    elif (args.cmd == 'add' or args.cmd == 'remove') and args.r_content is None:
+        print("= Error: cmd '{}' requires --content", args.cmd)
+        print("---")
+        parser.print_help()
+        return False
+
+    return True
 
 def argparsing(exec_file):
     parser = argparse.ArgumentParser(exec_file)
@@ -74,7 +100,7 @@ def argparsing(exec_file):
                         default=None)
     parser.add_argument("--domain",
                         dest='domain',
-                        help="Domain, or zone.",
+                        help="Domain, or zone used for TransIP account and domain identification.",
                         default=None,
                         type=str)
     parser.add_argument("--fqdn",
@@ -124,7 +150,6 @@ def argparsing(exec_file):
 
     return args
 
-
 def search_record(domain, name=None, expire=None, rr_type=None, r_content=None):
     records = domain.dns.list()
 
@@ -169,9 +194,6 @@ def add_record(domain, name=None, expire=None, rr_type=None, r_content=None):
 
 
 def update_danetlsa(domain, args):
-    fqdn = args.fqdn
-    port = args.port
-
     if args.protocol == 'tls':
         protocol = pyDANETLSA.DANETLSA_TLS
     if args.protocol == 'imap':
@@ -195,21 +217,17 @@ def update_danetlsa(domain, args):
                               expire=dns_entry_data['expire'],
                               rr_type=dns_entry_data['type'],
                               r_content=dns_entry_data['content'])
-    else:
-        print("Nothing to remove")
 
     # Add new updated record, using the pyDANETLSA analyses
-    ret = add_record(domain, name=d.tlsa_rr_name_host(),
-                             expire=300,
-                             rr_type="TLSA",
-                             r_content=d.tlsa_rdata_3_1_1())
-    print(ret)
-    print("Added")
+    add_record(domain, name=d.tlsa_rr_name_host(),
+                       expire=300,
+                       rr_type="TLSA",
+                       r_content=d.tlsa_rdata_3_1_1())
 
 
 ### MAIN
 if __name__ == "__main__":
-    args = argparsing('transip-test.py')
+    args = argparsing('transip-cmd.py')
 
     # Start TransIP client
     client = transip.TransIP(login=args.login, private_key_file=args.privkey)
@@ -224,8 +242,8 @@ if __name__ == "__main__":
                            rr_type=args.rr_type, r_content=args.r_content)
 
     elif args.cmd == 'remove':
-        add_record(domain, name=args.name,       expire=args.expire,
-                           rr_type=args.rr_type, r_content=args.r_content)
+        remove_record(domain, name=args.name,       expire=args.expire,
+                              rr_type=args.rr_type, r_content=args.r_content)
 
     else:
         print("Not implemented")
