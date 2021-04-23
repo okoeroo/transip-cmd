@@ -7,41 +7,48 @@ import transip
 
 def check_correctness(parser, args):
     if args.cmd is None:
-        print("Error: No cmd given")
+        print("= Error: No cmd given")
         print("---")
         parser.print_help()
         sys.exit(1)
 
     elif args.cmd == 'danetls' and \
-        (args.fqdn is None or \
+        (args.domain is None or \
+         args.fqdn is None or \
          args.port is None or \
          args.protocol is None or \
          args.privkey is None or \
          args.login is None):
-        print("cmd 'danetls' requires --fqdn, --port, --protocol, --private-key and --login")
+        print("= Error: cmd 'danetls' requires --fqdn, --port, --protocol, --private-key and --login")
         print("---")
         parser.print_help()
         sys.exit(1)
 
-#    if args.protocol is None:
-#        parser.print_help()
-#        sys.exit(1)
-#    if args.fqdn is None:
-#        parser.print_help()
-#        sys.exit(1)
-#    if args.port is None:
-#        parser.print_help()
-#        sys.exit(1)
-#    if args.login is None:
-#        parser.print_help()
-#        sys.exit(1)
-#    if args.privkey is None:
-#        parser.print_help()
-#        sys.exit(1)
-#    if args.cmd is None:
-#        parser.print_help()
-#        sys.exit(1)
+    elif args.cmd == 'add' and \
+        (args.domain is None or \
+         args.name is None or \
+         args.expire is None or \
+         args.rr_type is None or \
+         args.r_content is None or \
+         args.privkey is None or \
+         args.login is None):
+        print("= Error: cmd 'add' requires --name, --expire, --type, --content, --private-key and --login")
+        print("---")
+        parser.print_help()
+        sys.exit(1)
 
+    elif args.cmd == 'remove' and \
+        (args.domain is None or \
+         args.name is None or \
+         args.expire is None or \
+         args.rr_type is None or \
+         args.r_content is None or \
+         args.privkey is None or \
+         args.login is None):
+        print("= Error: cmd 'remove' requires --name, --expire, --type, --content, --private-key and --login")
+        print("---")
+        parser.print_help()
+        sys.exit(1)
 
     return args
 
@@ -65,6 +72,11 @@ def argparsing(exec_file):
                         help="Protocol choice to extract certificate. Plain TLS \
                               or StartTLS with IMAP, SMTP, POP3.",
                         default=None)
+    parser.add_argument("--domain",
+                        dest='domain',
+                        help="Domain, or zone.",
+                        default=None,
+                        type=str)
     parser.add_argument("--fqdn",
                         dest='fqdn',
                         help="FQDN, full hostname dot domain.",
@@ -83,6 +95,26 @@ def argparsing(exec_file):
     parser.add_argument("--private-key",
                         dest='privkey',
                         help="Private key for TransIP.",
+                        default=None,
+                        type=str)
+    parser.add_argument("--name",
+                        dest='name',
+                        help="Resource record name.",
+                        default=None,
+                        type=str)
+    parser.add_argument("--expire",
+                        dest='name',
+                        help="Resource record expiration time in seconds.",
+                        default=None,
+                        type=int)
+    parser.add_argument("--type",
+                        dest='rr_type',
+                        help="Resource record type, e.g. A, AAAA, TLSA, CNAME, TXT, MX, etc.",
+                        default=None,
+                        type=str)
+    parser.add_argument("--content",
+                        dest='r_content',
+                        help="Resource record content or data.",
                         default=None,
                         type=str)
 
@@ -136,7 +168,7 @@ def add_record(domain, name=None, expire=None, rr_type=None, r_content=None):
     return domain.dns.create(dns_entry_data)
 
 
-def update_danetlsa(args):
+def update_danetlsa(domain, args):
     fqdn = args.fqdn
     port = args.port
 
@@ -149,16 +181,10 @@ def update_danetlsa(args):
     if args.protocol == 'pop3':
         protocol = pyDANETLSA.DANETLSA_POP3
 
-    # Start TransIP client
-    client = transip.TransIP(login=args.login, private_key_file=args.privkey)
-
     # Run DANE TLSA analyser
-    d = pyDANETLSA.danetlsa(fqdn=fqdn, port=port, protocol=protocol)
+    d = pyDANETLSA.danetlsa(fqdn=args.fqdn, port=args.port, protocol=protocol)
     d.connect()
     d.process_pubkey_hex()
-
-    # Use host/domain splitter from pyDANETLSA
-    domain = client.domains.get(d.domain)
 
     # Search for similar record, and regardless of exact value.
     res = search_record(domain, name=d.tlsa_rr_name_host(), rr_type='TLSA')
@@ -174,19 +200,32 @@ def update_danetlsa(args):
 
     # Add new updated record, using the pyDANETLSA analyses
     ret = add_record(domain, name=d.tlsa_rr_name_host(),
-                       expire=300,
-                       rr_type="TLSA",
-                       r_content=d.tlsa_rdata_3_1_1())
+                             expire=300,
+                             rr_type="TLSA",
+                             r_content=d.tlsa_rdata_3_1_1())
     print(ret)
     print("Added")
-
 
 
 ### MAIN
 if __name__ == "__main__":
     args = argparsing('transip-test.py')
 
+    # Start TransIP client
+    client = transip.TransIP(login=args.login, private_key_file=args.privkey)
+    domain = client.domains.get(args.domain)
+
+    # Execute command
     if args.cmd == 'danetlsa':
-        update_danetlsa(args)
+        update_danetlsa(domain, args)
+
+    elif args.cmd == 'add':
+        add_record(domain, name=args.name,       expire=args.expire,
+                           rr_type=args.rr_type, r_content=args.r_content)
+
+    elif args.cmd == 'remove':
+        add_record(domain, name=args.name,       expire=args.expire,
+                           rr_type=args.rr_type, r_content=args.r_content)
+
     else:
         print("Not implemented")
