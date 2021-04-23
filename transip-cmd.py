@@ -129,7 +129,7 @@ def argparsing(exec_file):
                         default=None,
                         type=str)
     parser.add_argument("--expire",
-                        dest='name',
+                        dest='expire',
                         help="Resource record expiration time in seconds.",
                         default=None,
                         type=int)
