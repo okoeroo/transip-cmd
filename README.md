@@ -1,7 +1,13 @@
 # transip-cmd
+Wrapper around the TransIP API using python-transip. It also allows for automatic detecting of the TLSA configuration through pyDANETLSA.
+
+## Requirements
+* pip install python-transip
+* pip install pyDANETLSA
 
 
-```bash
+## Usage:
+```
 usage: transip-cmd.py [-h] [--cmd {add,remove,danetlsa}] [--ut {tcp,udp}]
                       [--protocol {tls,imap,smtp,pop3}] [--domain DOMAIN]
                       [--fqdn FQDN] [--port PORT] [--login LOGIN]
