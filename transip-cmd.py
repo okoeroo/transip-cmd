@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import os
 import argparse
 import pyDANETLSA
 import transip
@@ -205,8 +206,7 @@ def update_danetlsa(domain, args):
 
     # Run DANE TLSA analyser
     d = pyDANETLSA.danetlsa(fqdn=args.fqdn, port=args.port, protocol=protocol)
-    d.connect()
-    d.process_pubkey_hex()
+    d.engage()
 
     # Search for similar record, and regardless of exact value.
     res = search_record(domain, name=d.tlsa_rr_name_host(), rr_type='TLSA')
@@ -227,7 +227,7 @@ def update_danetlsa(domain, args):
 
 ### MAIN
 if __name__ == "__main__":
-    args = argparsing('transip-cmd.py')
+    args = argparsing(os.path.basename(__file__))
 
     # Start TransIP client
     client = transip.TransIP(login=args.login, private_key_file=args.privkey)
