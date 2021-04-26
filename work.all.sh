@@ -20,3 +20,4 @@ sleep 15
 dig TXT test1.koeroo.com  @ns0.transip.net
 echo
 
+./transip-cmd.py --cmd danetlsa --domain koeroo.net --protocol smtp --fqdn  smtp.koeroo.net --port  25 --login okoeroo --private-key keys/gamora.api.key --certfile certs/letsencrypt_R3_CA.pem

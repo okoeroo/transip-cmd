@@ -32,6 +32,11 @@ def check_correctness(parser, args):
         parser.print_help()
         return False
 
+    elif args.cmd == 'danetlsa' and (args.protocol == 'pem' or args.protocol == 'der') and args.certfile is None:
+        print("= Error: cmd 'danetls' using --protocol with 'pem' or 'der' requires --certfile to be set")
+        print("---")
+        parser.print_help()
+        return False
 
     # other
     elif (args.cmd == 'add' or args.cmd == 'remove' or args.cmd == 'danetlsa') and args.domain is None:
@@ -94,11 +99,17 @@ def argparsing(exec_file):
                         default='tcp',
                         type=str)
     parser.add_argument("--protocol",
-                        choices=['tls', 'imap', 'smtp', 'pop3'],
+                        choices=['tls', 'imap', 'smtp', 'pop3', 'pem', 'der'],
                         dest='protocol',
                         help="Protocol choice to extract certificate. Plain TLS \
-                              or StartTLS with IMAP, SMTP, POP3.",
-                        default=None)
+                              or StartTLS with IMAP, SMTP, POP3, PEM file, DER file.",
+                        default=None,
+                        type=str)
+    parser.add_argument("--certfile",
+                        dest='certfile',
+                        help="File path to a PEM or DER file to read for DANE TLSA.",
+                        default=None,
+                        type=str)
     parser.add_argument("--domain",
                         dest='domain',
                         help="Domain, or zone used for TransIP account and domain identification.",
@@ -203,20 +214,31 @@ def update_danetlsa(domain, args):
         protocol = pyDANETLSA.DANETLSA_SMTP
     if args.protocol == 'pop3':
         protocol = pyDANETLSA.DANETLSA_POP3
+    if args.protocol == 'pem':
+        protocol = pyDANETLSA.DANETLSA_PEM
+    if args.protocol == 'der':
+        protocol = pyDANETLSA.DANETLSA_DER
 
-    # Run DANE TLSA analyser
-    d = pyDANETLSA.danetlsa(fqdn=args.fqdn, port=args.port, protocol=protocol)
-    d.engage()
+    if args.protocol == 'der' or args.protocol == 'pem':
+        # Run DANE TLSA analyser based on the provided certificate file
+        d = pyDANETLSA.danetlsa(fqdn=args.fqdn, port=args.port,
+                                protocol=protocol, certfile=args.certfile)
+        d.engage()
+    else:
+        # Run DANE TLSA analyser based on the pyDANETLSA analyser
+        d = pyDANETLSA.danetlsa(fqdn=args.fqdn, port=args.port,
+                                protocol=protocol)
+        d.engage()
 
     # Search for similar record, and regardless of exact value.
     res = search_record(domain, name=d.tlsa_rr_name_host(), rr_type='TLSA')
 
     # Remove all instances of these
-    for dns_entry_data in res:
-        remove_record(domain, name=dns_entry_data['name'],
-                              expire=dns_entry_data['expire'],
-                              rr_type=dns_entry_data['type'],
-                              r_content=dns_entry_data['content'])
+#    for dns_entry_data in res:
+#        remove_record(domain, name=dns_entry_data['name'],
+#                              expire=dns_entry_data['expire'],
+#                              rr_type=dns_entry_data['type'],
+#                              r_content=dns_entry_data['content'])
 
     # Add new updated record, using the pyDANETLSA analyses
     add_record(domain, name=d.tlsa_rr_name_host(),
