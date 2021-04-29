@@ -218,16 +218,18 @@ def update_danetlsa(domain, args):
         protocol = pyDANETLSA.DANETLSA_PEM
     if args.protocol == 'der':
         protocol = pyDANETLSA.DANETLSA_DER
+    if args.protocol == 'ftp':
+        protocol = pyDANETLSA.DANETLSA_FTP
 
     if args.protocol == 'der' or args.protocol == 'pem':
         # Run DANE TLSA analyser based on the provided certificate file
         d = pyDANETLSA.danetlsa(fqdn=args.fqdn, port=args.port,
-                                protocol=protocol, certfile=args.certfile)
+                                probe_protocol=protocol, certfile=args.certfile)
         d.engage()
     else:
         # Run DANE TLSA analyser based on the pyDANETLSA analyser
         d = pyDANETLSA.danetlsa(fqdn=args.fqdn, port=args.port,
-                                protocol=protocol)
+                                probe_protocol=protocol)
         d.engage()
 
     # Search for similar record, and regardless of exact value.
