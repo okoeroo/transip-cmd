@@ -87,7 +87,7 @@ def check_correctness(parser, args):
 def argparsing(exec_file):
     parser = argparse.ArgumentParser(exec_file)
     parser.add_argument("--cmd",
-                        choices=['add', 'remove', 'danetlsa'],
+                        choices=['add', 'remove', 'list', 'danetlsa'],
                         dest='cmd',
                         help="The used command.",
                         default=None,
@@ -186,6 +186,12 @@ def search_record(domain, name=None, expire=None, rr_type=None, r_content=None):
         res.append(dns_entry_data)
     return res
 
+def list_records(domain):
+    records = search_record(domain)
+
+    for record in records:
+        print(f"{record['name']}  {record['expire']}  {record['type']}  {record['content']}")
+
 def remove_record(domain, name=None, expire=None, rr_type=None, r_content=None):
     dns_entry_data = {
         "name": name,
@@ -268,6 +274,9 @@ if __name__ == "__main__":
     elif args.cmd == 'remove':
         remove_record(domain, name=args.name,       expire=args.expire,
                               rr_type=args.rr_type, r_content=args.r_content)
+
+    elif args.cmd == 'list':
+        list_records(domain)
 
     else:
         print("Not implemented")
