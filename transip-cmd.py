@@ -99,10 +99,11 @@ def argparsing(exec_file):
                         default='tcp',
                         type=str)
     parser.add_argument("--protocol",
-                        choices=['tls', 'imap', 'smtp', 'pop3', 'pem', 'der'],
+                        choices=['tls', 'imap', 'smtp', 'pop3', 'pem', 'der', 'ftp'],
                         dest='protocol',
-                        help="Protocol choice to extract certificate. Plain TLS \
-                              or StartTLS with IMAP, SMTP, POP3, PEM file, DER file.",
+                        help="Protocol choice to extract certificate. Plain TLS or \
+                              StartTLS with IMAP, SMTP, POP3, FTP, or \
+                              by reading a PEM file or DER file.",
                         default=None,
                         type=str)
     parser.add_argument("--certfile",
@@ -199,7 +200,7 @@ def remove_record(domain, name=None, expire=None, rr_type=None, r_content=None):
         "type": rr_type,
         "content": r_content
     }
-    domain.dns.delete(dns_entry_data)
+    return domain.dns.delete(dns_entry_data)
 
 def add_record(domain, name=None, expire=None, rr_type=None, r_content=None):
     dns_entry_data = {
@@ -209,7 +210,6 @@ def add_record(domain, name=None, expire=None, rr_type=None, r_content=None):
         "content": r_content
     }
     return domain.dns.create(dns_entry_data)
-
 
 def update_danetlsa(domain, args):
     if args.protocol == 'tls':
@@ -249,34 +249,39 @@ def update_danetlsa(domain, args):
 #                              r_content=dns_entry_data['content'])
 
     # Add new updated record, using the pyDANETLSA analyses
-    add_record(domain, name=d.tlsa_rr_name_host(),
-                       expire=300,
-                       rr_type="TLSA",
-                       r_content=d.tlsa_rdata_3_1_1())
+    return add_record(domain, name=d.tlsa_rr_name_host(),
+                              expire=300,
+                              rr_type="TLSA",
+                              r_content=d.tlsa_rdata_3_1_1())
 
 
 ### MAIN
 if __name__ == "__main__":
     args = argparsing(os.path.basename(__file__))
 
-    # Start TransIP client
-    client = transip.TransIP(login=args.login, private_key_file=args.privkey)
-    domain = client.domains.get(args.domain)
+    try:
+        # Start TransIP client
+        client = transip.TransIP(login=args.login, private_key_file=args.privkey)
+        domain = client.domains.get(args.domain)
 
-    # Execute command
-    if args.cmd == 'danetlsa':
-        update_danetlsa(domain, args)
+        # Execute command
+        if args.cmd == 'danetlsa':
+            update_danetlsa(domain, args)
 
-    elif args.cmd == 'add':
-        add_record(domain, name=args.name,       expire=args.expire,
-                           rr_type=args.rr_type, r_content=args.r_content)
+        elif args.cmd == 'add':
+            add_record(domain, name=args.name,       expire=args.expire,
+                               rr_type=args.rr_type, r_content=args.r_content)
 
-    elif args.cmd == 'remove':
-        remove_record(domain, name=args.name,       expire=args.expire,
-                              rr_type=args.rr_type, r_content=args.r_content)
+        elif args.cmd == 'remove':
+            remove_record(domain, name=args.name,       expire=args.expire,
+                                  rr_type=args.rr_type, r_content=args.r_content)
 
-    elif args.cmd == 'list':
-        list_records(domain)
+        elif args.cmd == 'list':
+            list_records(domain)
 
-    else:
-        print("Not implemented")
+        else:
+            print("Not implemented")
+
+    except transip.exceptions.TransIPHTTPError as err:
+        print(f"TransIPHTTPError: {err}", file=sys.stderr)
+        sys.exit(1)
