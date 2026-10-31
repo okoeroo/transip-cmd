@@ -2,7 +2,7 @@
 import sys
 import os
 import argparse
-from pyDANETLSA import DANETLSA, DANETLSAConnectionError, TLSAResolutionError, str_to_DANETLS_protocol
+from pyDANETLSA import DANETLSA, DANETLSAConnectionError, TLSAResolutionError, TLSAValidationError, str_to_DANETLS_protocol
 import transip
 
 
@@ -157,6 +157,8 @@ def argparsing(exec_file):
                         default=None,
                         type=str)
 
+    parser.add_argument("--tlsa-211", metavar="SHA256",
+                        help="Validate the live chain to this CA SPKI hash and also publish TLSA 2 1 1.")
     args = parser.parse_args()
     if not check_correctness(parser, args):
         sys.exit(1)
@@ -223,6 +225,12 @@ def update_danetlsa(domain, args):
     )
     d.connect()
 
+    # Validate before any DNS mutation; a mismatch must not publish either record.
+    anchor_record = None
+    if getattr(args, "tlsa_211", None):
+        anchor_record = d.tlsa_rdata_2_1_1(args.tlsa_211)
+        print(f"Validated CA: {anchor_record}")
+
     target, chain = d.tlsa_target()
     print("TLSA target: " + " -> ".join(chain))
     zone = args.domain.rstrip(".").lower()
@@ -254,6 +262,13 @@ def update_danetlsa(domain, args):
         print(f"Added TLSA at {target}")
     else:
         print(f"TLSA at {target} already matches")
+
+    if anchor_record:
+        if not any(normalized(r["content"]) == normalized(anchor_record) for r in tlsa):
+            add_record(domain, name=name, expire=300, rr_type="TLSA", r_content=anchor_record)
+            print(f"Added validated TLSA 2 1 1 at {target}")
+        else:
+            print(f"TLSA 2 1 1 at {target} already matches")
 
     # Preserve other usages/selectors and remove only superseded 3 1 1 records.
     for record in tlsa:
@@ -291,7 +306,7 @@ if __name__ == "__main__":
         else:
             print("Not implemented")
 
-    except (DANETLSAConnectionError, TLSAResolutionError) as err:
+    except (DANETLSAConnectionError, TLSAResolutionError, TLSAValidationError) as err:
         print(f"Error: {err}", file=sys.stderr)
         sys.exit(1)
     except transip.exceptions.TransIPHTTPError as err:

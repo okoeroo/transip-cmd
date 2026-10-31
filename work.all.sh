@@ -1,14 +1,17 @@
 #!/bin/bash -x
+set -e
+# Only publish the pinned CA when its chain validates for this service.
+TLSA_211_SHA256=8d02536c887482bc34ff54e41d2ba659bf85b341a0a20afadb5813dcfbcf286d
 
 ./transip-cmd.py --cmd list     --domain koeroo.com --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
 ./transip-cmd.py --cmd add      --domain koeroo.com --name test1 --expire 777 --type TXT --content "test 1 2 3" --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
 
 echo
-./transip-cmd.py --cmd danetlsa --domain koeroo.net --protocol imap --fqdn  smtp.koeroo.net --port 143 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
-./transip-cmd.py --cmd danetlsa --domain koeroo.net --protocol smtp --fqdn  smtp.koeroo.net --port  25 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
-./transip-cmd.py --cmd danetlsa --domain koeroo.net --protocol tls  --fqdn  smtp.koeroo.net --port 465 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
-./transip-cmd.py --cmd danetlsa --domain koeroo.net --protocol tls  --fqdn  smtp.koeroo.net --port 993 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
-./transip-cmd.py --cmd danetlsa --domain koeroo.net --protocol tls  --fqdn cloud.koeroo.net --port 443 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
+./transip-cmd.py --cmd danetlsa --tlsa-211 "$TLSA_211_SHA256" --domain koeroo.net --protocol imap --fqdn  smtp.koeroo.net --port 143 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
+./transip-cmd.py --cmd danetlsa --tlsa-211 "$TLSA_211_SHA256" --domain koeroo.net --protocol smtp --fqdn  smtp.koeroo.net --port  25 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
+./transip-cmd.py --cmd danetlsa --tlsa-211 "$TLSA_211_SHA256" --domain koeroo.net --protocol tls  --fqdn  smtp.koeroo.net --port 465 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
+./transip-cmd.py --cmd danetlsa --tlsa-211 "$TLSA_211_SHA256" --domain koeroo.net --protocol tls  --fqdn  smtp.koeroo.net --port 993 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
+./transip-cmd.py --cmd danetlsa --tlsa-211 "$TLSA_211_SHA256" --domain koeroo.net --protocol tls  --fqdn cloud.koeroo.net --port 443 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
 
 dig TXT test1.koeroo.com  @ns0.transip.net
 echo "Sleeping 30"
@@ -21,7 +24,7 @@ sleep 15
 dig TXT test1.koeroo.com  @ns0.transip.net
 echo
 
-./transip-cmd.py --cmd danetlsa --domain koeroo.net --protocol smtp --fqdn  smtp.koeroo.net --port  25 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key --certfile certs/letsencrypt_R3_CA.pem
+./transip-cmd.py --cmd danetlsa --tlsa-211 "$TLSA_211_SHA256" --domain koeroo.net --protocol smtp --fqdn  smtp.koeroo.net --port  25 --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
 
 
 ./transip-cmd.py --cmd add --domain koeroo.net  --name _mta-sts   --expire 300 --type TXT --content "v=STSv1; id=$(date "+%y%m%d%H%M%S")"  --login okoeroo --private-key /home/okoeroo/keys/transip.private.key
