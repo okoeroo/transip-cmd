@@ -2,7 +2,7 @@
 import sys
 import os
 import argparse
-import pyDANETLSA
+from pyDANETLSA import DANETLSA, DANETLSAConnectionError, TLSAResolutionError, str_to_DANETLS_protocol
 import transip
 
 
@@ -39,8 +39,8 @@ def check_correctness(parser, args):
         return False
 
     # other
-    elif (args.cmd == 'add' or args.cmd == 'remove' or args.cmd == 'danetlsa') and args.domain is None:
-        print("= Error: cmd '{}' requires --domain", args.cmd)
+    elif args.cmd in ('add', 'remove', 'list', 'danetlsa') and not (args.domain or '').strip():
+        print(f"= Error: cmd '{args.cmd}' requires --domain. Add --domain example.com.")
         print("---")
         parser.print_help()
         return False
@@ -95,7 +95,7 @@ def argparsing(exec_file):
     parser.add_argument("--ut",
                         choices=['tcp', 'udp'],
                         dest='tcpudp',
-                        help="For DANE TLSA set udp or tcp. - Needs fix in pyDANETLSA.",
+                        help="Transport protocol for the generated TLSA record (default: tcp).",
                         default='tcp',
                         type=str)
     parser.add_argument("--protocol",
@@ -212,47 +212,56 @@ def add_record(domain, name=None, expire=None, rr_type=None, r_content=None):
     return domain.dns.create(dns_entry_data)
 
 def update_danetlsa(domain, args):
-    if args.protocol == 'tls':
-        protocol = pyDANETLSA.DANETLSA_TLS
-    if args.protocol == 'imap':
-        protocol = pyDANETLSA.DANETLSA_IMAP
-    if args.protocol == 'smtp':
-        protocol = pyDANETLSA.DANETLSA_SMTP
-    if args.protocol == 'pop3':
-        protocol = pyDANETLSA.DANETLSA_POP3
-    if args.protocol == 'pem':
-        protocol = pyDANETLSA.DANETLSA_PEM
-    if args.protocol == 'der':
-        protocol = pyDANETLSA.DANETLSA_DER
-    if args.protocol == 'ftp':
-        protocol = pyDANETLSA.DANETLSA_FTP
+    protocol = str_to_DANETLS_protocol(args.protocol)
+    d = DANETLSA(
+        fqdn=args.fqdn,
+        port=args.port,
+        domain=args.domain,
+        transport_proto=args.tcpudp,
+        app_protocol=protocol,
+        certfile=args.certfile if args.protocol in ('pem', 'der') else None,
+    )
+    d.connect()
 
-    if args.protocol == 'der' or args.protocol == 'pem':
-        # Run DANE TLSA analyser based on the provided certificate file
-        d = pyDANETLSA.danetlsa(fqdn=args.fqdn, port=args.port,
-                                probe_protocol=protocol, certfile=args.certfile)
-        d.engage()
+    target, chain = d.tlsa_target()
+    print("TLSA target: " + " -> ".join(chain))
+    zone = args.domain.rstrip(".").lower()
+    owner = target.rstrip(".").lower()
+    if owner == zone:
+        name = "@"
+    elif owner.endswith("." + zone):
+        name = owner[:-(len(zone) + 1)]
     else:
-        # Run DANE TLSA analyser based on the pyDANETLSA analyser
-        d = pyDANETLSA.danetlsa(fqdn=args.fqdn, port=args.port,
-                                probe_protocol=protocol)
-        d.engage()
+        raise TLSAResolutionError(
+            f"TLSA target {target} is outside --domain {args.domain}; "
+            "no records changed. Select the target's managed zone with --domain."
+        )
 
-    # Search for similar record, and regardless of exact value.
-    res = search_record(domain, name=d.tlsa_rr_name_host(), rr_type='TLSA')
+    # Check the provider as well: DNS caches must not cause a write over a CNAME.
+    records = search_record(domain, name=name)
+    if any(record["type"] == "CNAME" for record in records):
+        raise TLSAResolutionError(
+            f"Target {target} is still a CNAME in TransIP; no records changed. "
+            "Wait for DNS propagation and retry."
+        )
+    desired = d.tlsa_rdata_3_1_1()
+    tlsa = [r for r in records if r["type"] == "TLSA"]
+    normalized = lambda content: " ".join(content.lower().split())
+    matching = [r for r in tlsa if normalized(r["content"]) == normalized(desired)]
+    if not matching:
+        # Publish first so a failed creation never removes the existing TLSA.
+        add_record(domain, name=name, expire=300, rr_type="TLSA", r_content=desired)
+        print(f"Added TLSA at {target}")
+    else:
+        print(f"TLSA at {target} already matches")
 
-    # Remove all instances of these
-#    for dns_entry_data in res:
-#        remove_record(domain, name=dns_entry_data['name'],
-#                              expire=dns_entry_data['expire'],
-#                              rr_type=dns_entry_data['type'],
-#                              r_content=dns_entry_data['content'])
-
-    # Add new updated record, using the pyDANETLSA analyses
-    return add_record(domain, name=d.tlsa_rr_name_host(),
-                              expire=300,
-                              rr_type="TLSA",
-                              r_content=d.tlsa_rdata_3_1_1())
+    # Preserve other usages/selectors and remove only superseded 3 1 1 records.
+    for record in tlsa:
+        fields = record["content"].split()
+        if fields[:3] == ["3", "1", "1"] and normalized(record["content"]) != normalized(desired):
+            remove_record(domain, name=name, expire=record["expire"],
+                          rr_type="TLSA", r_content=record["content"])
+            print(f"Removed superseded TLSA 3 1 1 at {target}")
 
 
 ### MAIN
@@ -282,6 +291,9 @@ if __name__ == "__main__":
         else:
             print("Not implemented")
 
+    except (DANETLSAConnectionError, TLSAResolutionError) as err:
+        print(f"Error: {err}", file=sys.stderr)
+        sys.exit(1)
     except transip.exceptions.TransIPHTTPError as err:
         print(f"TransIPHTTPError: {err}", file=sys.stderr)
         sys.exit(1)
