@@ -157,8 +157,10 @@ def argparsing(exec_file):
                         default=None,
                         type=str)
 
-    parser.add_argument("--tlsa-211", metavar="SHA256",
-                        help="Validate the live chain to this CA SPKI hash and also publish TLSA 2 1 1.")
+    parser.add_argument("--tlsa-311", metavar="HASH|auto", default="auto",
+                        help="Calculate the leaf SPKI hash (auto, default), or verify a supplied hash.")
+    parser.add_argument("--tlsa-211", metavar="HASH|auto",
+                        help="Also publish the issuing CA SPKI hash: auto or a verified supplied hash.")
     args = parser.parse_args()
     if not check_correctness(parser, args):
         sys.exit(1)
@@ -223,7 +225,11 @@ def update_danetlsa(domain, args):
         app_protocol=protocol,
         certfile=args.certfile if args.protocol in ('pem', 'der') else None,
     )
+    if args.tcpudp != "tcp" and args.protocol not in ("pem", "der"):
+        raise TLSAValidationError("Live certificate probing supports TCP only; use --ut tcp")
     d.connect()
+    desired = d.tlsa_rdata_3_1_1(getattr(args, "tlsa_311", "auto"))
+    print(f"Validated leaf: {desired}")
 
     # Validate before any DNS mutation; a mismatch must not publish either record.
     anchor_record = None
@@ -252,7 +258,6 @@ def update_danetlsa(domain, args):
             f"Target {target} is still a CNAME in TransIP; no records changed. "
             "Wait for DNS propagation and retry."
         )
-    desired = d.tlsa_rdata_3_1_1()
     tlsa = [r for r in records if r["type"] == "TLSA"]
     normalized = lambda content: " ".join(content.lower().split())
     matching = [r for r in tlsa if normalized(r["content"]) == normalized(desired)]
