@@ -2,6 +2,8 @@
 import sys
 import os
 import argparse
+import re
+from datetime import datetime, timezone
 from pyDANETLSA import DANETLSA, DANETLSAConnectionError, TLSAResolutionError, TLSAValidationError, str_to_DANETLS_protocol
 import transip
 
@@ -39,19 +41,19 @@ def check_correctness(parser, args):
         return False
 
     # other
-    elif args.cmd in ('add', 'remove', 'list', 'danetlsa') and not (args.domain or '').strip():
+    elif args.cmd in ('add', 'remove', 'list', 'danetlsa', 'mtasts') and not (args.domain or '').strip():
         print(f"= Error: cmd '{args.cmd}' requires --domain. Add --domain example.com.")
         print("---")
         parser.print_help()
         return False
 
-    elif (args.cmd == 'add' or args.cmd == 'remove' or args.cmd == 'danetlsa') and args.login is None:
+    elif (args.cmd in ('add', 'remove', 'danetlsa', 'mtasts')) and args.login is None:
         print("= Error: cmd '{}' requires --login", args.cmd)
         print("---")
         parser.print_help()
         return False
 
-    elif (args.cmd == 'add' or args.cmd == 'remove' or args.cmd == 'danetlsa') and args.privkey is None:
+    elif (args.cmd in ('add', 'remove', 'danetlsa', 'mtasts')) and args.privkey is None:
         print("= Error: cmd '{}' requires --private-key", args.cmd)
         print("---")
         parser.print_help()
@@ -87,7 +89,7 @@ def check_correctness(parser, args):
 def argparsing(exec_file):
     parser = argparse.ArgumentParser(exec_file)
     parser.add_argument("--cmd",
-                        choices=['add', 'remove', 'list', 'danetlsa'],
+                        choices=['add', 'remove', 'list', 'danetlsa', 'mtasts'],
                         dest='cmd',
                         help="The used command.",
                         default=None,
@@ -215,6 +217,35 @@ def add_record(domain, name=None, expire=None, rr_type=None, r_content=None):
     }
     return domain.dns.create(dns_entry_data)
 
+def ensure_mtasts(domain):
+    """Keep one valid MTA-STS announcement; do not rotate its id on every run."""
+    records = search_record(domain, name="_mta-sts")
+    if any(r["type"] == "CNAME" for r in records):
+        raise ValueError("_mta-sts is a CNAME; no records changed")
+    records = [r for r in records if r["type"] == "TXT"]
+    pattern = re.compile(r"^v=STSv1;\s*id=([A-Za-z0-9]{1,32});?\s*$")
+    valid = [(pattern.fullmatch(r["content"]), r) for r in records]
+    valid = [(match, r) for match, r in valid if match]
+    if valid:
+        # IDs are opaque; lexicographic order selects the latest timestamp-style ID.
+        keeper = max(valid, key=lambda item: item[0].group(1))[1]
+        if sum(r == keeper for r in records) > 1:
+            raise ValueError("Identical duplicate MTA-STS records cannot be safely deleted individually")
+    else:
+        keeper = dict(name="_mta-sts", expire=300, type="TXT",
+                      content="v=STSv1; id=" + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"))
+        domain.dns.create(keeper)
+    for record in records:
+        if record != keeper:
+            domain.dns.delete(record)
+            print("Removed duplicate/invalid _mta-sts: " + record["content"])
+    current = search_record(domain, name="_mta-sts", rr_type="TXT")
+    if len(current) != 1 or current[0]["content"] != keeper["content"]:
+        raise ValueError("MTA-STS verification did not return exactly one expected record; inspect DNS")
+    print("MTA-STS: exactly one record: " + keeper["content"])
+    return keeper
+
+
 def update_danetlsa(domain, args):
     protocol = str_to_DANETLS_protocol(args.protocol)
     d = DANETLSA(
@@ -297,6 +328,9 @@ if __name__ == "__main__":
         if args.cmd == 'danetlsa':
             update_danetlsa(domain, args)
 
+        elif args.cmd == 'mtasts':
+            ensure_mtasts(domain)
+
         elif args.cmd == 'add':
             add_record(domain, name=args.name,       expire=args.expire,
                                rr_type=args.rr_type, r_content=args.r_content)
@@ -311,7 +345,7 @@ if __name__ == "__main__":
         else:
             print("Not implemented")
 
-    except (DANETLSAConnectionError, TLSAResolutionError, TLSAValidationError) as err:
+    except (DANETLSAConnectionError, TLSAResolutionError, TLSAValidationError, ValueError) as err:
         print(f"Error: {err}", file=sys.stderr)
         sys.exit(1)
     except transip.exceptions.TransIPHTTPError as err:
