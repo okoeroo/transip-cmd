@@ -1,5 +1,7 @@
 #!/bin/bash -x
 
+source .venv/bin/activate
+
 # Calculate both records from each service, or supply verified SPKI pins.
 # A shared pin must match every service in this script.
 TLSA_311_SHA256=${TLSA_311_SHA256:-auto}
